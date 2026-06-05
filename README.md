@@ -1,6 +1,6 @@
 # stfc_research
 
-Data analysis for *Star Trek Fleet Command* — analytical foundation for [stfc_calc](https://github.com/malteoppermann/stfc_calc).
+Data analysis for *Star Trek Fleet Command* — analytical foundation for [stfc_calc](https://github.com/mo5e5/stfc_calc).
 
 ## Goal
 
@@ -54,3 +54,13 @@ Preliminary scaling factor: ~×1.25 per level (low confidence, 3 data points).
 ## Sources & References
 
 Values are empirical measurements from personal in-game battle reports. No reverse engineering, no unofficial APIs.
+
+## License
+
+Copyright (C) 2026 mo5e5
+
+Licensed under the **GNU General Public License v3.0 or later** — see [LICENSE](LICENSE) for the full text. You may use, modify, and redistribute this software; derivative works must remain under the GPL.
+
+---
+
+<sub>Community tool — not affiliated with Scopely or CBS Studios.</sub>
