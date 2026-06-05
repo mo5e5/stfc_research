@@ -12,6 +12,12 @@ DIFFICULTY_MAP = {
     "Epische": "purple",
 }
 
+FILENAME_DIFFICULTY_MAP = {
+    "green": "green",
+    "blue": "blue",
+    "purple": "purple",
+}
+
 DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
 DATA_PROCESSED = Path(__file__).parent.parent / "data" / "processed"
 
@@ -92,6 +98,14 @@ def parse_section2(lines: list[str]) -> str:
     return "unknown"
 
 
+def difficulty_from_filename(filename: str) -> str:
+    stem = filename.lower()
+    for keyword, difficulty in FILENAME_DIFFICULTY_MAP.items():
+        if keyword in stem:
+            return difficulty
+    return "unknown"
+
+
 def parse_section3(lines: list[str]) -> dict:
     rows = parse_tsv(lines)
     if len(rows) < 2:
@@ -126,7 +140,10 @@ def parse_report(filepath: Path) -> dict:
         raise ValueError(f"{filepath.name}: Fewer than 4 sections found")
 
     data = parse_section1(sections[0])
-    data["difficulty"] = parse_section2(sections[1])
+    difficulty = parse_section2(sections[1])
+    if difficulty == "unknown":
+        difficulty = difficulty_from_filename(filepath.name)
+    data["difficulty"] = difficulty
     data.update(parse_section3(sections[2]))
     data["rounds"] = parse_section4(sections[3])
     data["source_file"] = filepath.name
