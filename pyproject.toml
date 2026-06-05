@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "stfc-research"
+version = "0.2.0"
+description = "Derive scaling formulas for STFC armada strengths from battle report CSVs"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0,<3",
+    "numpy>=1.24,<2",
+    "scipy>=1.11,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4,<9",
+    "pytest-cov>=4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

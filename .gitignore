@@ -34,8 +34,7 @@ htmlcov/
 *.swp
 *.swo
 
-# Data — processed outputs (regenerierbar)
-data/processed/
+# Outputs (regenerierbar)
 results/
 
 # Rohdaten — nicht versionieren (ggf. Spieler-Daten)

@@ -1,11 +1,14 @@
 import pytest
 
 from scripts.parse_report import (
+    difficulty_from_filename,
     parse_report,
     parse_section1,
     parse_section2,
     parse_section3,
     parse_section4,
+    safe_float,
+    safe_int,
     split_sections,
 )
 
@@ -39,6 +42,14 @@ SECTION3_LINES = [
     "Feindliche Flotte 1\t570510\t28000\t5\t150",
 ]
 
+SECTION3_LINES_FULL = [
+    "Flotte\tAngreifen\tSchaden pro Runde\tKritische Trefferchance\tKritischer Schaden"
+    "\tVerteidigung\tPanzerung\tSchildablenkung\tAusweichen"
+    "\tRüstungsdurchdringung\tSchilddurchdringung\tGenauigkeit\tSchiffsabilität",
+    "Spielerflotte 1\t1000000\t50000\t10\t200\t500000\t8000000\t300000\t25000\t15000\t10000\t40000\t--",
+    "Feindliche Flotte 1\t570510\t28000\t5\t150\t420000\t6500000\t250000\t18000\t12000\t8000\t35000\tInterdimensional Threat III",
+]
+
 SECTION4_LINES = [
     "Runde\tEreignis\tAngreifer\tZiel\tSchaden",
     "1\tAngriff\tSTELLA\tAustausch-Bank\t100000",
@@ -51,7 +62,7 @@ SAMPLE_CSV = "\n".join([
     "",
     *SECTION2_GREEN,
     "",
-    *SECTION3_LINES,
+    *SECTION3_LINES_FULL,
     "",
     *SECTION4_LINES,
 ])
@@ -174,14 +185,94 @@ def test_section2_unknown():
     assert parse_section2(lines) == "unknown"
 
 
+# ── safe_int / safe_float / difficulty_from_filename ─────────────────────────
+
+def test_safe_int_parses_integer():
+    assert safe_int("12345", "test") == 12345
+
+
+def test_safe_int_handles_thousands_separators():
+    assert safe_int("1.500", "test") == 1500
+
+
+def test_safe_int_returns_none_for_invalid():
+    assert safe_int("abc", "test") is None
+
+
+def test_safe_int_returns_none_for_none():
+    assert safe_int(None, "test") is None
+
+
+def test_safe_int_returns_none_for_dash():
+    assert safe_int("--", "test") is None
+
+
+def test_safe_float_parses_float():
+    assert safe_float("5.5", "test") == 5.5
+
+
+def test_safe_float_handles_european_comma():
+    assert safe_float("5,5", "test") == 5.5
+
+
+def test_safe_float_returns_none_for_invalid():
+    assert safe_float("abc", "test") is None
+
+
+def test_difficulty_from_filename_green():
+    assert difficulty_from_filename("stella_vs_35_green.csv") == "green"
+
+
+def test_difficulty_from_filename_blue():
+    assert difficulty_from_filename("borg_42_blue.csv") == "blue"
+
+
+def test_difficulty_from_filename_purple():
+    assert difficulty_from_filename("eclipse_40_purple.csv") == "purple"
+
+
+def test_difficulty_from_filename_unknown():
+    assert difficulty_from_filename("report_unknown.csv") == "unknown"
+
+
+def test_difficulty_from_filename_case_insensitive():
+    assert difficulty_from_filename("eclipse_35_GREEN.csv") == "green"
+
+
 # ── parse_section3 ─────────────────────────────────────────────────────────────
 
 def test_section3_attack():
     assert parse_section3(SECTION3_LINES)["attack"] == 570510
 
 
-def test_section3_only_header_returns_zero():
-    assert parse_section3(["Flotte\tAngreifen"]) == {"attack": 0}
+def test_section3_only_header_returns_none():
+    result = parse_section3(["Flotte\tAngreifen"])
+    assert result["attack"] is None
+
+
+def test_section3_all_fields_with_full_fixture():
+    result = parse_section3(SECTION3_LINES_FULL)
+    assert result["attack"] == 570510
+    assert result["damage_per_round"] == 28000
+    assert result["crit_chance"] == 5.0
+    assert result["crit_damage"] == 150.0
+    assert result["defense"] == 420000
+    assert result["armour"] == 6500000
+    assert result["shield_deflection"] == 250000
+    assert result["dodge"] == 18000
+    assert result["armour_pierce"] == 12000
+    assert result["shield_pierce"] == 8000
+    assert result["accuracy"] == 35000
+    assert result["ship_ability"] == "Interdimensional Threat III"
+
+
+def test_section3_missing_columns_return_none():
+    """With minimal SECTION3_LINES, columns not in the header should be None."""
+    result = parse_section3(SECTION3_LINES)
+    assert result["attack"] == 570510
+    assert result["defense"] is None
+    assert result["armour"] is None
+    assert result["ship_ability"] is None
 
 
 # ── parse_section4 ─────────────────────────────────────────────────────────────
@@ -217,6 +308,17 @@ def test_parse_report_full(tmp_path):
     assert record["player_ship_strength"] == 2008084
     assert record["player_officers"] == ["James T. Kirk", "Spock", "Khan Noonien Singh"]
     assert record["attack"] == 570510
+    assert record["damage_per_round"] == 28000
+    assert record["crit_chance"] == 5.0
+    assert record["crit_damage"] == 150.0
+    assert record["defense"] == 420000
+    assert record["armour"] == 6500000
+    assert record["shield_deflection"] == 250000
+    assert record["dodge"] == 18000
+    assert record["armour_pierce"] == 12000
+    assert record["shield_pierce"] == 8000
+    assert record["accuracy"] == 35000
+    assert record["ship_ability"] == "Interdimensional Threat III"
     assert record["rounds"] == 12
     assert record["location"] == "Karppinen"
     assert record["timestamp"] == "2026-05-03T19:23:31"

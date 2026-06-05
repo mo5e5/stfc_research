@@ -1,4 +1,1 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
+"""pytest configuration — project root is added to sys.path via pyproject.toml."""
