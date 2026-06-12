@@ -67,6 +67,54 @@ SAMPLE_CSV = "\n".join([
     *SECTION4_LINES,
 ])
 
+# ── English Fixtures ──────────────────────────────────────────────────────────
+
+SECTION1_LINES_EN = [
+    (
+        "Player Name\tPlayer Level\tResult\tShip Name\tShip Level\tShip Strength"
+        "\tOfficer One\tOfficer Two\tOfficer Three"
+        "\tHull HP\tRemaining Hull HP\tShield HP\tRemaining Shield HP\tLocation\tTimestamp"
+    ),
+    (
+        "m0535\t55\tWIN\tSTELLA\t25\t2008084"
+        "\tJames T. Kirk\tSpock\tKhan Noonien Singh"
+        "\t5000000\t4530000\t3000000\t0\tKarppinen\t2026-05-03T19:23:31"
+    ),
+    (
+        "Exchange Bank\t35\t\tExchange Bank\t35\t45292360"
+        "\t--\t--\t--"
+        "\t51249215\t0\t34785341\t0\t\t"
+    ),
+]
+
+SECTION2_GREEN_EN = ["Reward Name\tCount", "Uncommon Salvage\t5"]
+SECTION2_BLUE_EN = ["Reward Name\tCount", "Rare Equipment\t3"]
+SECTION2_PURPLE_EN = ["Reward Name\tCount", "Epic Parts\t1"]
+
+SECTION3_LINES_EN = [
+    "Fleet\tAttack\tDamage Per Round\tCritical Chance\tCritical Damage",
+    "Player Fleet 1\t1000000\t50000\t10\t200",
+    "Enemy Fleet 1\t570510\t28000\t5\t150",
+]
+
+SECTION3_LINES_FULL_EN = [
+    "Fleet\tAttack\tDamage Per Round\tCritical Chance\tCritical Damage"
+    "\tDefense\tArmour\tShield Deflection\tDodge"
+    "\tArmour Pierce\tShield Pierce\tAccuracy\tShip Ability",
+    "Player Fleet 1\t1000000\t50000\t10\t200\t500000\t8000000\t300000\t25000\t15000\t10000\t40000\t--",
+    "Enemy Fleet 1\t570510\t28000\t5\t150\t420000\t6500000\t250000\t18000\t12000\t8000\t35000\tInterdimensional Threat III",
+]
+
+SAMPLE_CSV_EN = "\n".join([
+    *SECTION1_LINES_EN,
+    "",
+    *SECTION2_GREEN_EN,
+    "",
+    *SECTION3_LINES_FULL_EN,
+    "",
+    *SECTION4_LINES,
+])
+
 
 # ── split_sections ─────────────────────────────────────────────────────────────
 
@@ -330,3 +378,134 @@ def test_parse_report_too_few_sections(tmp_path):
     csv_file.write_text("nur eine Sektion\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Fewer than 4 sections"):
         parse_report(csv_file)
+
+
+# ── English Parsing Tests ──────────────────────────────────────────────────────
+
+def test_section1_en_faction_and_type():
+    data = parse_section1(SECTION1_LINES_EN, locale="en")
+    assert data["faction"] == "eclipse"
+    assert data["type"] == "exchange"
+
+
+def test_section1_en_level_and_strength():
+    data = parse_section1(SECTION1_LINES_EN, locale="en")
+    assert data["level"] == 35
+    assert data["strength"] == 45292360
+
+
+def test_section1_en_hp():
+    data = parse_section1(SECTION1_LINES_EN, locale="en")
+    assert data["hull_hp"] == 51249215
+    assert data["shield_hp"] == 34785341
+    assert data["total_hp"] == 51249215 + 34785341
+
+
+def test_section1_en_result_win():
+    data = parse_section1(SECTION1_LINES_EN, locale="en")
+    assert data["result"] == "win"
+
+
+def test_section1_en_player_ship():
+    data = parse_section1(SECTION1_LINES_EN, locale="en")
+    assert data["player_ship"] == "STELLA"
+    assert data["player_ship_level"] == 25
+    assert data["player_ship_strength"] == 2008084
+
+
+def test_section1_en_officers():
+    data = parse_section1(SECTION1_LINES_EN, locale="en")
+    assert data["player_officers"] == ["James T. Kirk", "Spock", "Khan Noonien Singh"]
+
+
+def test_section2_en_green():
+    assert parse_section2(SECTION2_GREEN_EN, locale="en") == "green"
+
+
+def test_section2_en_blue():
+    assert parse_section2(SECTION2_BLUE_EN, locale="en") == "blue"
+
+
+def test_section2_en_purple():
+    assert parse_section2(SECTION2_PURPLE_EN, locale="en") == "purple"
+
+
+def test_section3_en_all_fields():
+    result = parse_section3(SECTION3_LINES_FULL_EN, locale="en")
+    assert result["attack"] == 570510
+    assert result["damage_per_round"] == 28000
+    assert result["crit_chance"] == 5.0
+    assert result["crit_damage"] == 150.0
+    assert result["defense"] == 420000
+    assert result["armour"] == 6500000
+    assert result["shield_deflection"] == 250000
+    assert result["dodge"] == 18000
+    assert result["armour_pierce"] == 12000
+    assert result["shield_pierce"] == 8000
+    assert result["accuracy"] == 35000
+    assert result["ship_ability"] == "Interdimensional Threat III"
+
+
+def test_parse_report_en_full(tmp_path):
+    """Parse English CSV and verify output matches English test data."""
+    csv_file = tmp_path / "stella vs 35 green_en.csv"
+    csv_file.write_text(SAMPLE_CSV_EN, encoding="utf-8")
+
+    record = parse_report(csv_file, lang="en")
+
+    assert record["faction"] == "eclipse"
+    assert record["type"] == "exchange"
+    assert record["difficulty"] == "green"
+    assert record["level"] == 35
+    assert record["strength"] == 45292360
+    assert record["hull_hp"] == 51249215
+    assert record["shield_hp"] == 34785341
+    assert record["total_hp"] == 86034556
+    assert record["result"] == "win"
+    assert record["player_hull_remaining_pct"] == pytest.approx(90.6, abs=0.1)
+    assert record["player_ship"] == "STELLA"
+    assert record["player_ship_level"] == 25
+    assert record["player_ship_strength"] == 2008084
+    assert record["player_officers"] == ["James T. Kirk", "Spock", "Khan Noonien Singh"]
+    assert record["attack"] == 570510
+    assert record["damage_per_round"] == 28000
+    assert record["crit_chance"] == 5.0
+    assert record["crit_damage"] == 150.0
+    assert record["defense"] == 420000
+    assert record["armour"] == 6500000
+    assert record["shield_deflection"] == 250000
+    assert record["dodge"] == 18000
+    assert record["armour_pierce"] == 12000
+    assert record["shield_pierce"] == 8000
+    assert record["accuracy"] == 35000
+    assert record["ship_ability"] == "Interdimensional Threat III"
+    assert record["rounds"] == 12
+    assert record["location"] == "Karppinen"
+    assert record["timestamp"] == "2026-05-03T19:23:31"
+    assert record["source_file"] == "stella vs 35 green_en.csv"
+
+
+def test_parse_report_auto_detect_en(tmp_path):
+    """Auto-detect English locale from CSV."""
+    csv_file = tmp_path / "stella vs 35 green_auto.csv"
+    csv_file.write_text(SAMPLE_CSV_EN, encoding="utf-8")
+
+    record = parse_report(csv_file, lang="auto")
+
+    # Should produce same data structure as explicit lang="en"
+    assert record["faction"] == "eclipse"
+    assert record["type"] == "exchange"
+    assert record["result"] == "win"
+
+
+def test_parse_report_auto_detect_de(tmp_path):
+    """Auto-detect German locale from CSV."""
+    csv_file = tmp_path / "stella vs 35 green_de.csv"
+    csv_file.write_text(SAMPLE_CSV, encoding="utf-8")
+
+    record = parse_report(csv_file, lang="auto")
+
+    # Should produce same data structure as explicit lang="de"
+    assert record["faction"] == "eclipse"
+    assert record["type"] == "exchange"
+    assert record["result"] == "win"

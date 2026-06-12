@@ -6,39 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from scripts.locales import LOCALES
+
 logger = logging.getLogger(__name__)
-
-ARMADA_TYPE_MAP = {
-    "Austausch-Bank": ("eclipse", "exchange"),
-}
-
-DIFFICULTY_MAP = {
-    "Ungewöhnliche": "green",
-    "Seltene": "blue",
-    "Epische": "purple",
-}
 
 DIFFICULTY_KEYWORDS = ["green", "blue", "purple"]
 
 DEFAULT_DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
 DEFAULT_DATA_PROCESSED = Path(__file__).parent.parent / "data" / "processed"
-
-# Section 3 enemy fleet column mapping (DE column → (JSON field, type))
-# type: "int" | "float" | "str"
-ENEMY_FLEET_COLUMNS: dict[str, tuple[str, str]] = {
-    "Angreifen": ("attack", "int"),
-    "Schaden pro Runde": ("damage_per_round", "int"),
-    "Kritische Trefferchance": ("crit_chance", "float"),
-    "Kritischer Schaden": ("crit_damage", "float"),
-    "Verteidigung": ("defense", "int"),
-    "Panzerung": ("armour", "int"),
-    "Schildablenkung": ("shield_deflection", "int"),
-    "Ausweichen": ("dodge", "int"),
-    "Rüstungsdurchdringung": ("armour_pierce", "int"),
-    "Schilddurchdringung": ("shield_pierce", "int"),
-    "Genauigkeit": ("accuracy", "int"),
-    "Schiffsabilität": ("ship_ability", "str"),
-}
 
 
 def split_sections(lines: list[str]) -> list[list[str]]:
@@ -84,7 +59,36 @@ def safe_float(value: Any, field_name: str = "unknown") -> float | None:
         return None
 
 
-def parse_section1(lines: list[str]) -> dict:
+def detect_locale(lines: list[str]) -> str:
+    """
+    Auto-detect locale by checking which locale's section1 keys appear in the header.
+    Returns "de" or "en"; defaults to "de" if ambiguous or no match.
+    """
+    if not lines:
+        return "de"
+
+    header = lines[0].lower()
+
+    de_section1 = LOCALES["de"]["section1"]
+    en_section1 = LOCALES["en"]["section1"]
+
+    de_matches = sum(1 for key in de_section1.keys() if key.lower() in header)
+    en_matches = sum(1 for key in en_section1.keys() if key.lower() in header)
+
+    if en_matches > de_matches:
+        return "en"
+    return "de"
+
+
+def _get_column_key(s1_map: dict, internal_name: str) -> str | None:
+    """Get the locale-specific column key for an internal field name."""
+    for col_name, field_name in s1_map.items():
+        if field_name == internal_name:
+            return col_name
+    return None
+
+
+def parse_section1(lines: list[str], locale: str = "de") -> dict:
     rows = parse_tsv(lines)
     if len(rows) < 2:
         raise ValueError(
@@ -93,49 +97,74 @@ def parse_section1(lines: list[str]) -> dict:
 
     player, enemy = rows[0], rows[1]
 
-    hull_max = safe_int(player.get("Hüllen-TP"), "hull_max") or 0
-    hull_remaining = safe_int(player.get("Verbleibende Hüllen-TP"), "hull_remaining") or 0
+    locale_data = LOCALES[locale]
+    s1_map = locale_data["section1"]
+    armada_map = locale_data["armada"]
+    result_map = locale_data["result"]
+
+    # Get column keys for this locale (both in player and enemy rows)
+    hull_hp_max_key = _get_column_key(s1_map, "hull_hp_max")
+    hull_hp_remaining_key = _get_column_key(s1_map, "hull_hp_remaining")
+    officer_1_key = _get_column_key(s1_map, "officer_1")
+    officer_2_key = _get_column_key(s1_map, "officer_2")
+    officer_3_key = _get_column_key(s1_map, "officer_3")
+    player_name_key = _get_column_key(s1_map, "player_name")
+    player_level_key = _get_column_key(s1_map, "player_level")
+    player_ship_key = _get_column_key(s1_map, "player_ship")
+    player_ship_level_key = _get_column_key(s1_map, "player_ship_level")
+    player_ship_strength_key = _get_column_key(s1_map, "player_ship_strength")
+    location_key = _get_column_key(s1_map, "location")
+    timestamp_key = _get_column_key(s1_map, "timestamp")
+    shield_hp_max_key = _get_column_key(s1_map, "shield_hp_max")
+    result_key = _get_column_key(s1_map, "result")
+
+    hull_max = safe_int(player.get(hull_hp_max_key) if hull_hp_max_key else None, "hull_max") or 0
+    hull_remaining = safe_int(player.get(hull_hp_remaining_key) if hull_hp_remaining_key else None, "hull_remaining") or 0
     hull_pct = round(hull_remaining / hull_max * 100, 1) if hull_max > 0 else 0.0
 
-    officers = [
-        player[key].strip()
-        for key in ("Offizier Eins", "Offizier Zwei", "Offizier Drei")
-        if player.get(key, "").strip() not in ("", "--")
-    ]
+    officers = []
+    for key in (officer_1_key, officer_2_key, officer_3_key):
+        if key and player.get(key, "").strip() not in ("", "--"):
+            officers.append(player.get(key, "").strip())
 
-    armada_key = enemy.get("Spielername", "").strip()
-    faction, armada_type = ARMADA_TYPE_MAP.get(armada_key, ("unknown", "unknown"))
+    armada_key = enemy.get(player_name_key, "").strip() if player_name_key else ""
+    faction, armada_type = armada_map.get(armada_key, ("unknown", "unknown"))
 
-    hull_hp = safe_int(enemy.get("Hüllen-TP"), "hull_hp")
-    shield_hp = safe_int(enemy.get("Schild-TP"), "shield_hp")
+    hull_hp = safe_int(enemy.get(hull_hp_max_key) if hull_hp_max_key else None, "hull_hp")
+    shield_hp = safe_int(enemy.get(shield_hp_max_key) if shield_hp_max_key else None, "shield_hp")
 
-    result = "win" if player.get("Ergebnis", "").strip().upper() == "SIEG" else "loss"
+    # Result comes from the player row
+    result_str = player.get(result_key, "").strip().upper() if result_key else ""
+    result = result_map.get(result_str, "loss")
 
     _has_any_hp = hull_hp is not None or shield_hp is not None
 
     return {
         "faction": faction,
         "type": armada_type,
-        "level": safe_int(enemy.get("Spielerlevel"), "level"),
-        "strength": safe_int(enemy.get("Schiffsstärke"), "strength"),
+        "level": safe_int(enemy.get(player_level_key) if player_level_key else None, "level"),
+        "strength": safe_int(enemy.get(player_ship_strength_key) if player_ship_strength_key else None, "strength"),
         "hull_hp": hull_hp,
         "shield_hp": shield_hp,
         "total_hp": (hull_hp or 0) + (shield_hp or 0) if _has_any_hp else None,
         "result": result,
         "player_hull_remaining_pct": hull_pct,
-        "player_ship": player.get("Schiffsname", "").strip(),
-        "player_ship_level": safe_int(player.get("Schiffslevel"), "player_ship_level"),
-        "player_ship_strength": safe_int(player.get("Schiffsstärke"), "player_ship_strength"),
+        "player_ship": player.get(player_ship_key, "").strip() if player_ship_key else "",
+        "player_ship_level": safe_int(player.get(player_ship_level_key) if player_ship_level_key else None, "player_ship_level"),
+        "player_ship_strength": safe_int(player.get(player_ship_strength_key) if player_ship_strength_key else None, "player_ship_strength"),
         "player_officers": officers,
-        "location": player.get("Standort", "").strip(),
-        "timestamp": player.get("Zeitstempel", "").strip(),
+        "location": player.get(location_key, "").strip() if location_key else "",
+        "timestamp": player.get(timestamp_key, "").strip() if timestamp_key else "",
     }
 
 
-def parse_section2(lines: list[str]) -> str:
+def parse_section2(lines: list[str], locale: str = "de") -> str:
+    locale_data = LOCALES[locale]
+    difficulty_map = locale_data["difficulty"]
+
     for row in parse_tsv(lines):
-        name = row.get("Belohnungsname", "")
-        for keyword, difficulty in DIFFICULTY_MAP.items():
+        name = row.get("Belohnungsname" if locale == "de" else "Reward Name", "")
+        for keyword, difficulty in difficulty_map.items():
             if keyword in name:
                 return difficulty
     return "unknown"
@@ -149,16 +178,21 @@ def difficulty_from_filename(filename: str) -> str:
     return "unknown"
 
 
-def parse_section3(lines: list[str]) -> dict:
+def parse_section3(lines: list[str], locale: str = "de") -> dict:
     rows = parse_tsv(lines)
     if len(rows) < 2:
         logger.warning("Section 3 has fewer than 2 data rows — returning null fields")
-        return {json_field: None for json_field, _ in ENEMY_FLEET_COLUMNS.values()}
+        locale_data = LOCALES[locale]
+        enemy_fleet_map = locale_data["enemy_fleet"]
+        return {json_field: None for json_field, _ in enemy_fleet_map.values()}
 
     enemy = rows[1]
+    locale_data = LOCALES[locale]
+    enemy_fleet_map = locale_data["enemy_fleet"]
+
     result = {}
-    for de_col, (json_field, col_type) in ENEMY_FLEET_COLUMNS.items():
-        raw = enemy.get(de_col)
+    for locale_col, (json_field, col_type) in enemy_fleet_map.items():
+        raw = enemy.get(locale_col)
         if raw is None or str(raw).strip() in ("", "--"):
             result[json_field] = None
         elif col_type == "str":
@@ -180,7 +214,7 @@ def parse_section4(lines: list[str]) -> int:
     return max_round
 
 
-def parse_report(filepath: Path) -> dict:
+def parse_report(filepath: Path, lang: str = "auto") -> dict:
     text = None
     for enc in ("utf-8", "cp1252"):
         try:
@@ -195,12 +229,20 @@ def parse_report(filepath: Path) -> dict:
     if len(sections) < 4:
         raise ValueError(f"{filepath.name}: Fewer than 4 sections found")
 
-    data = parse_section1(sections[0])
-    difficulty = parse_section2(sections[1])
+    # Auto-detect locale if requested
+    if lang == "auto":
+        locale = detect_locale(sections[0])
+    elif lang in ("de", "en"):
+        locale = lang
+    else:
+        locale = "de"
+
+    data = parse_section1(sections[0], locale=locale)
+    difficulty = parse_section2(sections[1], locale=locale)
     if difficulty == "unknown":
         difficulty = difficulty_from_filename(filepath.name)
     data["difficulty"] = difficulty
-    data.update(parse_section3(sections[2]))
+    data.update(parse_section3(sections[2], locale=locale))
     data["rounds"] = parse_section4(sections[3])
     data["source_file"] = filepath.name
     return data
@@ -212,6 +254,8 @@ def main():
                         help=f"Raw CSV directory (default: {DEFAULT_DATA_RAW})")
     parser.add_argument("--data-processed", type=str, default=str(DEFAULT_DATA_PROCESSED),
                         help=f"Output directory (default: {DEFAULT_DATA_PROCESSED})")
+    parser.add_argument("--lang", type=str, choices=["auto", "de", "en"], default="auto",
+                        help="Language/locale for parsing (default: auto-detect)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     parser.add_argument("--quiet", "-q", action="store_true", help="Suppress info logging")
     args = parser.parse_args()
@@ -234,7 +278,7 @@ def main():
     errors = 0
     for path in csv_files:
         try:
-            records.append(parse_report(path))
+            records.append(parse_report(path, lang=args.lang))
             logger.info("  OK  %s", path.name)
         except ValueError as exc:
             errors += 1

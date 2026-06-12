@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts.analyze import exponential, fit_group, load_dataset
+from scripts.analyze import exponential, fit_group, load_dataset, R_SQUARED_MIN
 
 
 def test_exponential_returns_a_when_b_is_1():
@@ -73,3 +73,36 @@ def test_load_dataset_invalid_format(tmp_path):
     f.write_text('"just a string"', encoding="utf-8")
     with pytest.raises(ValueError, match="Unexpected dataset.json format"):
         load_dataset(f)
+
+
+def test_fit_group_clean_exponential_data():
+    """Test fit_group with 3 perfectly exponential points → status='ok', R²≈1."""
+    records = [
+        {"level": 1, "strength": 10},
+        {"level": 2, "strength": 20},
+        {"level": 3, "strength": 40},
+    ]
+    result = fit_group(records)
+    assert result["status"] == "ok"
+    assert result["data_points"] == 3
+    assert result["r_squared"] > 0.99
+
+
+def test_fit_group_poor_fit_data():
+    """Test fit_group with poorly fitting data → status='low_confidence', R²<R_SQUARED_MIN."""
+    records = [
+        {"level": 1, "strength": 10},
+        {"level": 2, "strength": 1000},
+        {"level": 3, "strength": 12},
+    ]
+    result = fit_group(records)
+    assert result["status"] == "low_confidence"
+    assert result["data_points"] == 3
+    assert result["r_squared"] < R_SQUARED_MIN
+
+
+def test_r_squared_min_constant_exists():
+    """Test that R_SQUARED_MIN is defined and is a float."""
+    assert isinstance(R_SQUARED_MIN, (int, float))
+    assert R_SQUARED_MIN > 0
+    assert R_SQUARED_MIN <= 1

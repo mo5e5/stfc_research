@@ -5,6 +5,7 @@ Reads data/processed/dataset.json, fits exponential models
 results/constants.json.
 """
 
+import argparse
 import json
 import logging
 import sys
@@ -16,6 +17,8 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 logger = logging.getLogger(__name__)
+
+R_SQUARED_MIN = 0.8
 
 DEFAULT_DATASET = Path(__file__).parent.parent / "data" / "processed" / "dataset.json"
 DEFAULT_CONSTANTS = Path(__file__).parent.parent / "results" / "constants.json"
@@ -60,8 +63,13 @@ def fit_group(records: list[dict]) -> dict[str, Any]:
         # Standard errors (from covariance diagonal)
         perr = np.sqrt(np.diag(pcov))
 
+        # Check fit quality
+        status = "ok" if r_sq >= R_SQUARED_MIN else "low_confidence"
+        if r_sq < R_SQUARED_MIN:
+            logger.warning("Low-confidence fit: R²=%.4f < %.2f", r_sq, R_SQUARED_MIN)
+
         return {
-            "status": "ok",
+            "status": status,
             "data_points": len(records),
             "min_level": int(np.min(levels)),
             "max_level": int(np.max(levels)),
@@ -93,13 +101,23 @@ def load_dataset(path: Path) -> list[dict]:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Fit exponential scaling formulas from dataset.json.")
+    parser.add_argument("--dataset", type=str, default=str(DEFAULT_DATASET),
+                        help=f"Path to dataset.json (default: {DEFAULT_DATASET})")
+    parser.add_argument("--output", type=str, default=str(DEFAULT_CONSTANTS),
+                        help=f"Path to output constants.json (default: {DEFAULT_CONSTANTS})")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Enable debug logging")
+    args = parser.parse_args()
+
+    log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(levelname)s: %(message)s",
     )
 
-    dataset_path = DEFAULT_DATASET
-    constants_path = DEFAULT_CONSTANTS
+    dataset_path = Path(args.dataset)
+    constants_path = Path(args.output)
 
     if not dataset_path.exists():
         logger.error("Dataset not found: %s — run parse_report.py first.", dataset_path)
